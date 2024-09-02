@@ -1,4 +1,5 @@
 
+# =============================================================================
 
 # Specify the minimum version of CMake to use.
 # CMake can have different behaviors (policies) based on its version used.
@@ -24,6 +25,9 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Turn off using platform-specific compiler standards.
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_EXTENSIONS OFF)
+
+# turn on LTO.. but got some linking errors when I do, so it's off for now
+#set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 # Fix minimum compiler versions.
 set(GCC_VERSION_MIN "9.1")
@@ -73,14 +77,18 @@ if(CF_DEVELOP_MODE)
 endif()
 
 
-# Here, we have some platform-specific considerations
-# of which we must take care.
+# Here, we have some platform-specific considerations of which we must take
+# care.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     execute_process(
         COMMAND getconf LEVEL1_DCACHE_LINESIZE
         COMMAND tr -d '\n'
         OUTPUT_VARIABLE L1_CACHE_LINE_SIZE
     )
+    if(NOT DEFINED L1_CACHE_LINE_SIZE OR L1_CACHE_LINE_SIZE STREQUAL "")
+        set(L1_CACHE_LINE_SIZE 64) # failsafe
+    endif()
+
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     if(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
         # OSX has `getconf`, but doesn't report `LEVEL1_DCACHE_LINESIZE`;
@@ -102,8 +110,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         message(FATAL_ERROR "Unable to identify Apple Silicon processor architecture")
     endif()
 
-    # Later on, jemalloc will complain if the C compiler 
-    # hasn't been properly set.
+    # Later on, jemalloc will complain if the C compiler  hasn't been properly set.
     if(NOT CONDA_BUILD)
         set(CMAKE_C_COMPILER clang)
         set(CMAKE_CXX_COMPILER clang++)
@@ -113,23 +120,17 @@ endif()
 add_compile_definitions(L1_CACHE_LINE_SIZE=${L1_CACHE_LINE_SIZE})
 
 
-# Search the file system for the appropriate threads package for this platform, and then set
-# the `CMAKE_THREAD_LIBS_INIT` variable (and some other variables as well).
-find_package(Threads REQUIRED)  # The threads package is required for the BBHash library used in the project.
-set(THREADS_PREFER_PTHREAD_FLAG TRUE)   # The BBHash library uses `pthread`.
+# Determine the thread library of the system.
+include(FindThreads)
+if(NOT Threads_FOUND)
+    message(FATAL_ERROR "A supported threads library is required. Aborting.")
+endif()
 
 # Search and load setting for the `zlib` library. The library is required to seamlessly adapt
 # the `kseq` and the `kmc` libraries to gzip-compressed files.
 include(FindZLIB)
 if(NOT ZLIB_FOUND)
     message(FATAL_ERROR "zlib (https://zlib.net/) is required. Aborting.")
-endif()
-
-# Search and load setting for the `bzip2` library. It is required to seamlessly adapt the
-# `kmc` library to bzip-compressed files.
-include(FindBZip2)
-if(NOT BZIP2_FOUND)
-    message(FATAL_ERROR "bzip2 (https://sourceware.org/bzip2/) is required. Aborting.")
 endif()
 
 
@@ -149,7 +150,7 @@ file(MAKE_DIRECTORY ${EXT_LIB} ${EXT_INCLUDE})
 # Prepare the `jemalloc` library. It provides scalable concurrency support and better avoidance
 # of fragmentation.
 set(MALLOC_LIB "")
-set(JEMALLOC_MIN_VERSION "5.2.1")
+set(JEMALLOC_MIN_VERSION "5.3.0")
 find_package(Jemalloc ${JEMALLOC_MIN_VERSION})
 if(JEMALLOC_FOUND)
     message("Found jemalloc (v${JEMALLOC_VERSION}) in the system")
@@ -158,11 +159,11 @@ else()
     message("Build system will fetch and install jemalloc")
     ExternalProject_Add(prj_jemalloc
         DOWNLOAD_DIR        ${CMAKE_SOURCE_DIR}/external
-        DOWNLOAD_COMMAND    curl -k -L https://github.com/jemalloc/jemalloc/archive/5.2.1.tar.gz -o jemalloc-5.2.1.tar.gz &&
-                            tar -xzf jemalloc-5.2.1.tar.gz &&
-                            rm jemalloc-5.2.1.tar.gz
+        DOWNLOAD_COMMAND    curl -k -L https://github.com/jemalloc/jemalloc/archive/${JEMALLOC_MIN_VERSION}.tar.gz -o jemalloc-${JEMALLOC_MIN_VERSION}.tar.gz &&
+                            tar -xzf jemalloc-${JEMALLOC_MIN_VERSION}.tar.gz &&
+                            rm jemalloc-${JEMALLOC_MIN_VERSION}.tar.gz
 
-        SOURCE_DIR          ${CMAKE_SOURCE_DIR}/external/jemalloc-5.2.1
+        SOURCE_DIR          ${CMAKE_SOURCE_DIR}/external/jemalloc-${JEMALLOC_MIN_VERSION}
         BUILD_IN_SOURCE     TRUE
         INSTALL_DIR         ${CMAKE_SOURCE_DIR}/external
         CONFIGURE_COMMAND   sh -c "CC=${CMAKE_C_COMPILER} ./autogen.sh --disable-debug --enable-static --prefix=<INSTALL_DIR> --silent"
@@ -181,25 +182,43 @@ endif()
 
 # Prepare the `kmc` library — required by the Cuttlefish algorithm implementation.
 # NOTE: do something more intelligent below than the -j4
+set(KMC_VERSION "v3.2.2")
 message("Build system will fetch and install KMC3")
 ExternalProject_Add(prj_kmc
     DOWNLOAD_DIR        ${CMAKE_SOURCE_DIR}/external
-    DOWNLOAD_COMMAND    curl -k -L https://github.com/refresh-bio/KMC/archive/refs/tags/v3.2.1.tar.gz -o KMC-3.2.1.tar.gz &&
-                        tar -xzf KMC-3.2.1.tar.gz &&
-                        rm KMC-3.2.1.tar.gz
-    PATCH_COMMAND       patch --strip 1 < ${CMAKE_SOURCE_DIR}/patches/kmc_patch.diff
-    SOURCE_DIR          ${CMAKE_SOURCE_DIR}/external/KMC-3.2.1
+    DOWNLOAD_COMMAND    rm -Rf  KMC-sra-io && git clone -b sra-io --recursive https://github.com/rchikhi/KMC.git KMC-sra-io
+    PATCH_COMMAND       #patch --strip 1 < ${CMAKE_SOURCE_DIR}/patches/kmc_patch.diff
+    SOURCE_DIR          ${CMAKE_SOURCE_DIR}/external/KMC-sra-io
     BUILD_IN_SOURCE     TRUE
     INSTALL_DIR         ${CMAKE_SOURCE_DIR}/external/
     CONFIGURE_COMMAND   ""
-    BUILD_COMMAND       make -j4 CC=${CMAKE_CXX_COMPILER} simde && make -j4 CC=${CMAKE_CXX_COMPILER} kmc
-    INSTALL_COMMAND     cp bin/libkmc_core.a ${EXT_LIB} &&
-                        cp include/kmc_runner.h ${EXT_INCLUDE}
+    BUILD_COMMAND       mkdir -p build && cd build && cmake .. && make -j8
+    INSTALL_COMMAND     cp build/kmc_core/libkmc_core.a ${EXT_LIB} &&
+                        cp build/3rd_party/ncbi/ncbi_sratools_ext-prefix/lib64/libncbi-ngs-c++.a ${EXT_LIB} &&
+                        cp build/3rd_party/ncbi/ncbi_sratools_ext-prefix/lib64/libncbi-ngs.a ${EXT_LIB} &&
+                        cp build/3rd_party/ncbi/ncbi_sratools_ext-prefix/lib64/libngs-c++.a ${EXT_LIB} &&
+                        cp build/3rd_party/ncbi/ncbi_vdb_ext-prefix/lib64/libncbi-vdb.a ${EXT_LIB} &&
+                        cp kmc_core/kmc_runner.h ${EXT_INCLUDE}
+                        #    BUILD_COMMAND       make -j CC=${CMAKE_CXX_COMPILER} simde && make -j CC=${CMAKE_CXX_COMPILER} kmc
+                        #    INSTALL_COMMAND     cp bin/libkmc_core.a ${EXT_LIB} &&
+                        #                        cp include/kmc_runner.h ${EXT_INCLUDE}
 )
 
 add_library(kmc STATIC IMPORTED)
 set_target_properties(kmc PROPERTIES IMPORTED_LOCATION ${EXT_LIB}/libkmc_core.a)
 add_dependencies(kmc prj_kmc)
+
+add_library(ncbi-vdb STATIC IMPORTED)
+set_target_properties(ncbi-vdb PROPERTIES IMPORTED_LOCATION ${EXT_LIB}/libncbi-vdb.a)
+
+add_library(ngs-c++ STATIC IMPORTED)
+set_target_properties(ngs-c++ PROPERTIES IMPORTED_LOCATION ${EXT_LIB}/libngs-c++.a)
+
+add_library(ncbi-ngs STATIC IMPORTED)
+set_target_properties(ncbi-ngs PROPERTIES IMPORTED_LOCATION ${EXT_LIB}/libncbi-ngs.a)
+
+add_library(ncbi-ngs-c++ STATIC IMPORTED)
+set_target_properties(ncbi-ngs-c++ PROPERTIES IMPORTED_LOCATION ${EXT_LIB}/libncbi-ngs-c++.a)
 
 
 # The `Debug` configuration optimizes the program for debugging and enables full debug information.

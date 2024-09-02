@@ -958,7 +958,7 @@ bool CKMC_DB::GetCountersForRead_kmc1_both_strands(const std::string& read, std:
 		bool contains_N = false;
 		while (i < read_len && pos < kmer_length)
 		{
-			if (CKmerAPI::num_codes[(uchar)read[i]] < 0)
+			if (CKmerAPI::num_codes[(uchar)read[i]] == 0xFF)
 			{
 				pos = 0;
 				rev_pos = kmer_length - 1;
@@ -992,7 +992,7 @@ bool CKMC_DB::GetCountersForRead_kmc1_both_strands(const std::string& read, std:
 
 		while (i < read_len)
 		{
-			if (CKmerAPI::num_codes[(uchar)read[i]] < 0)
+			if (CKmerAPI::num_codes[(uchar)read[i]] == 0xFF)
 			{
 				pos = 0;
 				break;
@@ -1035,7 +1035,7 @@ bool CKMC_DB::GetCountersForRead_kmc1(const std::string& read, std::vector<uint3
 		bool contains_N = false;
 		while (i < read_len && pos < kmer_length)
 		{
-			if (CKmerAPI::num_codes[(uchar)read[i]] < 0)
+			if (CKmerAPI::num_codes[(uchar)read[i]] == 0xFF)
 			{
 				pos = 0;
 				kmer.clear();
@@ -1060,7 +1060,7 @@ bool CKMC_DB::GetCountersForRead_kmc1(const std::string& read, std::vector<uint3
 
 		while (i < read_len)
 		{
-			if (CKmerAPI::num_codes[(uchar)read[i]] < 0)
+			if (CKmerAPI::num_codes[(uchar)read[i]] == 0xFF)
 			{
 				pos = 0;
 				break;
@@ -1093,7 +1093,7 @@ void CKMC_DB::GetSuperKmers(const std::string& transformed_read, super_kmers_t& 
 		//building first signature after 'N' or at the read beginning
 		for (uint32 j = 0; j < signature_len; ++j, ++i)
 		{
-			if (transformed_read[i] < 0)//'N'
+			if (transformed_read[i] == 0xFF)//'N'
 			{
 				contains_N = true;
 				break;
@@ -1112,7 +1112,7 @@ void CKMC_DB::GetSuperKmers(const std::string& transformed_read, super_kmers_t& 
 
 		for (; i < transformed_read.length(); ++i)
 		{
-			if (transformed_read[i] < 0)//'N'
+			if (transformed_read[i] == 0xFF)//'N'
 			{
 				if (len >= kmer_length)
 				{

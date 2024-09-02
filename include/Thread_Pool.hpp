@@ -6,6 +6,7 @@
 
 #include "Task_Params.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -28,6 +29,8 @@ public:
         output_gfa_reduced,
         compute_states_read_space,
         extract_unipaths_read_space,
+        compute_counts_read_space,
+        output_unitigs_with_counts,
     };
 
 
@@ -52,7 +55,7 @@ private:
     const Task_Type task_type;
 
     // Collection of the task statuses of each thread.
-    volatile Task_Status* const task_status;
+    std::atomic<Task_Status>* const task_status;
 
     // The collection of the threads in the pool.
     std::vector<std::thread> thread_pool;
@@ -97,6 +100,12 @@ public:
     // to the thread number `thread_id`; the edges (i.e. (k + 1)-mers) or vertices (i.e. k-mers),
     // respectively, are parsed using `parser`.
     void assign_read_dBG_compaction_task(void* parser, uint16_t thread_id);
+
+    // Assigns a read-dBG counts computation task,
+    // to the thread number `thread_id`; the edges (i.e. (k + 1)-mers) or vertices (i.e. k-mers),
+    // respectively, are parsed using `parser`.
+    void assign_read_dBG_counts_task(void* parser, uint16_t thread_id);
+
 
     // Waits until all the threads in the pool have completed their active tasks.
     void wait_completion() const;

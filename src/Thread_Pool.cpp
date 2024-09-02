@@ -4,6 +4,7 @@
 #include "CdBG.hpp"
 #include "Read_CdBG_Constructor.hpp"
 #include "Read_CdBG_Extractor.hpp"
+#include "Read_CdBG_Counts.hpp"
 
 #include <iostream>
 
@@ -13,7 +14,7 @@ Thread_Pool<k>::Thread_Pool(const uint16_t thread_count, void* const dBG, const 
     thread_count(thread_count),
     dBG(dBG),
     task_type(task_type),
-    task_status(new volatile Task_Status[thread_count])
+    task_status(new std::atomic<Task_Status>[thread_count])
 {
     // Mark the status of the task for each thread as `pending`.
     for(uint16_t t_id = 0; t_id < thread_count; ++t_id)
@@ -30,11 +31,13 @@ Thread_Pool<k>::Thread_Pool(const uint16_t thread_count, void* const dBG, const 
     case Task_Type::output_plain:
     case Task_Type::output_gfa:
     case Task_Type::output_gfa_reduced:
+    case Task_Type::output_unitigs_with_counts:
         output_params.resize(thread_count);
         break;
 
     case Task_Type::compute_states_read_space:
     case Task_Type::extract_unipaths_read_space:
+    case Task_Type::compute_counts_read_space:
         read_dBG_compaction_params.resize(thread_count);
         break;
 
@@ -105,7 +108,25 @@ void Thread_Pool<k>::task(const uint16_t thread_id)
                         process_vertices(static_cast<Kmer_SPMC_Iterator<k>*>(params.parser), params.thread_id);
                 }
                 break;
+	    
+            case Task_Type::compute_counts_read_space:
+                {
+                    const Read_dBG_Compaction_Params& params = read_dBG_compaction_params[thread_id];
+                    static_cast<Read_CdBG_Counts<k>*>(dBG)->
+                        process_edges_counts(static_cast<Kmer_SPMC_Iterator<k + 1>*>(params.parser), params.thread_id);
+                }
+                break;
+
+            case Task_Type::output_unitigs_with_counts:
+                {
+                    const Output_Task_Params& params = output_params[thread_id];
+                    static_cast<Read_CdBG_Counts<k>*>(dBG)->
+                       process_unitig_with_counts(params.thread_id, params.seq, params.seq_len, params.left_end, params.right_end);
+                }
+                break;
             }
+
+
 
 
             free_thread(thread_id);
@@ -158,6 +179,15 @@ void Thread_Pool<k>::assign_output_task(const uint16_t thread_id, const char* co
 
 template <uint16_t k>
 void Thread_Pool<k>::assign_read_dBG_compaction_task(void* const parser, const uint16_t thread_id)
+{
+    read_dBG_compaction_params[thread_id] = Read_dBG_Compaction_Params(parser, thread_id);
+
+    assign_task(thread_id);
+}
+
+
+template <uint16_t k>
+void Thread_Pool<k>::assign_read_dBG_counts_task(void* const parser, const uint16_t thread_id)
 {
     read_dBG_compaction_params[thread_id] = Read_dBG_Compaction_Params(parser, thread_id);
 

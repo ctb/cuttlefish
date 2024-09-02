@@ -5,6 +5,7 @@
 #include "kmer_Enumeration_Stats.hpp"
 #include "Read_CdBG_Constructor.hpp"
 #include "Read_CdBG_Extractor.hpp"
+#include "Read_CdBG_Counts.hpp"
 #include "kmc_runner.h"
 
 #include <limits>
@@ -101,12 +102,7 @@ void Read_CdBG<k>::construct()
 
     std::cout << "\nComputing the DFA states.\n";
     compute_DFA_states();
-
-#ifdef CF_DEVELOP_MODE
-    if(params.edge_db_path().empty())
-#endif
-    Kmer_Container<k + 1>::remove(logistics.edge_db_path());
-    
+   
     std::chrono::high_resolution_clock::time_point t_dfa = std::chrono::high_resolution_clock::now();
     std::cout << "Computed the states of the automata. Time taken = " << std::chrono::duration_cast<std::chrono::duration<double>>(t_dfa - t_mphf).count() << " seconds.\n";
 
@@ -127,13 +123,24 @@ void Read_CdBG<k>::construct()
     const double max_disk = static_cast<double>(max_disk_usage(edge_stats, vertex_stats)) / (1024.0 * 1024.0 * 1024.0);
     std::cout << "\nMaximum temporary disk-usage: " << max_disk << "GB.\n";
 #endif
+
+    // Beginning of Rayan's additions to compute unitig approximate counts
+    
+    clear_hash_table();
+    compute_counts();
+
+#ifdef CF_DEVELOP_MODE
+    if(params.edge_db_path().empty())
+#endif
+    if(!params.save_edges())
+    	Kmer_Container<k + 1>::remove(logistics.edge_db_path());
 }
 
 
 template <uint16_t k>
 kmer_Enumeration_Stats<k + 1> Read_CdBG<k>::enumerate_edges() const
 {
-    const KMC::InputFileType ip_type = (params.is_read_graph() ? KMC::InputFileType::FASTQ : KMC::InputFileType::MULTILINE_FASTA);
+    const KMC::InputFileType ip_type = (params.is_read_graph() ? KMC::InputFileType::SRAU : KMC::InputFileType::MULTILINE_FASTA);
     return kmer_Enumerator<k + 1>().enumerate(
         ip_type, logistics.input_paths_collection(), params.cutoff(), params.thread_count(),
         params.max_memory(), params.strict_memory(), params.strict_memory(), bits_per_vertex,
@@ -177,6 +184,13 @@ void Read_CdBG<k>::construct_hash_table(const uint64_t vertex_count, const bool 
     }
 }
 
+template <uint16_t k>
+void Read_CdBG<k>::clear_hash_table()
+{
+        hash_table->initialize_for_counts();
+}
+
+
 
 template <uint16_t k>
 void Read_CdBG<k>::compute_DFA_states()
@@ -197,6 +211,17 @@ void Read_CdBG<k>::extract_maximal_unitigs()
     dbg_info.add_unipaths_info(cdBg_extractor);
 }
 
+
+template <uint16_t k>
+void Read_CdBG<k>::compute_counts()
+{
+    Read_CdBG_Counts<k> cdBG_counts(params, *hash_table);
+
+    cdBG_counts.compute_counts(logistics.edge_db_path());
+    cdBG_counts.write_unitigs_mean_abundances(logistics.output_file_path());
+
+    dbg_info.add_basic_info(cdBG_counts);
+}
 
 template <uint16_t k>
 bool Read_CdBG<k>::is_constructed() const

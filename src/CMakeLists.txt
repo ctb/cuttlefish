@@ -1,4 +1,6 @@
 
+# =============================================================================
+
 # Bundle the cfcore_static source files into a variable.
 set(PROJECT_SRC
         kmc_api/kmc_file.cpp
@@ -6,7 +8,6 @@ set(PROJECT_SRC
         kmc_api/mmer.cpp
         kmc_api/Virtual_Prefix_File.cpp
         xxHash/xxhash.c
-        # xxHash/xxhsum.c
         Build_Params.cpp
         Application.cpp
         Seq_Input.cpp
@@ -31,6 +32,7 @@ set(PROJECT_SRC
         Read_CdBG.cpp
         Read_CdBG_Constructor.cpp
         Read_CdBG_Extractor.cpp
+	Read_CdBG_Counts.cpp
         Unitig_Scratch.cpp
         Maximal_Unitig_Scratch.cpp
         Unipaths_Meta_info.cpp
@@ -39,9 +41,9 @@ set(PROJECT_SRC
         Character_Buffer_Flusher.cpp
         Progress_Tracker.cpp
         dBG_Info.cpp
-        Validator.cpp
-        Validator_Hash_Table.cpp
         Sequence_Validator.cpp
+        Validator_Hash_Table.cpp
+        Validator.cpp
         Kmers_Validator.cpp
         utility.cpp
         commands.cpp
@@ -63,11 +65,11 @@ target_include_directories(cfcore_static PUBLIC ${INCLUDE_DIR} ${EXT_INCLUDE})
 # Specify the warnings and the extra optimization flags to the compiler for the target library.
 # As the flags are specified as `PRIVATE`, they will only be used when compiling this library.
 # These will not be propagated to the targets linking to it.
-target_compile_options(cfcore_static PRIVATE "$<$<CONFIG:DEBUG>:${WARNING_FLAGS}>" 
-  PRIVATE "$<$<CONFIG:DEBUG>:${SUPPRESS_WARNING_FLAGS}>" 
+target_compile_options(cfcore_static PRIVATE "$<$<CONFIG:DEBUG>:${WARNING_FLAGS}>"
+  PRIVATE "$<$<CONFIG:DEBUG>:${SUPPRESS_WARNING_FLAGS}>"
   PRIVATE "$<$<CONFIG:DEBUG>:${OPTIMIZE_FLAGS}>")
-target_compile_options(cfcore_static PRIVATE "$<$<CONFIG:RELEASE>:${WARNING_FLAGS}>" 
-  PRIVATE "$<$<CONFIG:RELEASE>:${SUPPRESS_WARNING_FLAGS}>" 
+target_compile_options(cfcore_static PRIVATE "$<$<CONFIG:RELEASE>:${WARNING_FLAGS}>"
+  PRIVATE "$<$<CONFIG:RELEASE>:${SUPPRESS_WARNING_FLAGS}>"
   PRIVATE "$<$<CONFIG:RELEASE>:${OPTIMIZE_FLAGS}>")
 target_compile_features(cfcore_static PUBLIC cxx_std_17)
 
@@ -87,15 +89,18 @@ target_link_libraries(cfcore_static PRIVATE ${CMAKE_DL_LIBS})
 
 # Link the cfcore_static library to the `kmc` library.
 target_link_libraries(cfcore_static PRIVATE kmc)
+ 
+# link sratools (learned the hard way that order of those lines matters)
+target_link_libraries(cfcore_static PRIVATE ncbi-ngs-c++)
+target_link_libraries(cfcore_static PRIVATE ncbi-ngs)
+target_link_libraries(cfcore_static PRIVATE ncbi-vdb)
+target_link_libraries(cfcore_static PRIVATE ngs-c++)
 
 # Link the cfcore_static library to the `zlib` library.
 target_link_libraries(cfcore_static PRIVATE ZLIB::ZLIB)
 
-# Link the cfcore_static library ti the `bzip2` library.
-target_link_libraries(cfcore_static PRIVATE BZip2::BZip2)
-
-# Link the cfcore_static library to the threads package in the platform.
-target_link_libraries(cfcore_static PRIVATE ${CMAKE_THREAD_LIBS_INIT})
+# Link the cfcore_static library to the threads library of the platform.
+target_link_libraries(cfcore_static PRIVATE Threads::Threads)
 
 # when building on conda on OSX with clang, we apparently need to explicitly
 # link the filesystem library, see (https://github.com/bioconda/bioconda-recipes/pull/37269/files)
@@ -108,11 +113,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE cfcore_static)
 
 
 # Specify warnings flags to the compiler for the target executable.
-target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:DEBUG>:${WARNING_FLAGS}>" 
-  PRIVATE "$<$<CONFIG:DEBUG>:${SUPPRESS_WARNING_FLAGS}>" 
+target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:DEBUG>:${WARNING_FLAGS}>"
+  PRIVATE "$<$<CONFIG:DEBUG>:${SUPPRESS_WARNING_FLAGS}>"
   PRIVATE "$<$<CONFIG:DEBUG>:${OPTIMIZE_FLAGS}>")
-target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:RELEASE>:${WARNING_FLAGS}>" 
-  PRIVATE "$<$<CONFIG:RELEASE>:${SUPPRESS_WARNING_FLAGS}>" 
+target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:RELEASE>:${WARNING_FLAGS}>"
+  PRIVATE "$<$<CONFIG:RELEASE>:${SUPPRESS_WARNING_FLAGS}>"
   PRIVATE "$<$<CONFIG:RELEASE>:${OPTIMIZE_FLAGS}>")
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 
@@ -124,28 +129,24 @@ install(TARGETS ${PROJECT_NAME}
         )
 
 install(TARGETS cfcore_static
-        DESTINATION lib 
-        )
-
-install(TARGETS cfcore_static
   DESTINATION lib
 )
 
-# apparently the cfcore_static_static library is not 
-# enough itself and tools wanting to use this
-# downstream will need to link against 
-# libkmc_core as well
+# Apparently the cfcore_static_static library is not enough itself and tools
+# wanting to use this downstream will need to link against `libkmc_core` as
+# well.
 install(FILES ${EXT_LIB}/libkmc_core.a
   DESTINATION lib
 )
 
+
 add_executable(test test.cpp)
 target_link_libraries(test PRIVATE cfcore_static)
-target_compile_options(test PRIVATE "$<$<CONFIG:DEBUG>:${WARNING_FLAGS}>" 
-  PRIVATE "$<$<CONFIG:DEBUG>:${SUPPRESS_WARNING_FLAGS}>" 
+target_compile_options(test PRIVATE "$<$<CONFIG:DEBUG>:${WARNING_FLAGS}>"
+  PRIVATE "$<$<CONFIG:DEBUG>:${SUPPRESS_WARNING_FLAGS}>"
   PRIVATE "$<$<CONFIG:DEBUG>:${OPTIMIZE_FLAGS}>")
-target_compile_options(test PRIVATE "$<$<CONFIG:RELEASE>:${WARNING_FLAGS}>" 
-  PRIVATE "$<$<CONFIG:RELEASE>:${SUPPRESS_WARNING_FLAGS}>" 
+target_compile_options(test PRIVATE "$<$<CONFIG:RELEASE>:${WARNING_FLAGS}>"
+  PRIVATE "$<$<CONFIG:RELEASE>:${SUPPRESS_WARNING_FLAGS}>"
   PRIVATE "$<$<CONFIG:RELEASE>:${OPTIMIZE_FLAGS}>")
 target_compile_features(test PUBLIC cxx_std_17)
 
